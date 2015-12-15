@@ -326,6 +326,8 @@
     <!-- ================================== -->
     <eat-comment />
 
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
     <!-- Used for permissions that allow an application to send messages
          on behalf of the user or intercept messages being received by the
          user.  This is primarily intended for SMS/MMS messaging, such as
@@ -344,6 +346,14 @@
         android:permissionFlags="costsMoney"
         android:label="@string/permlab_sendSms"
         android:description="@string/permdesc_sendSms" />
+
+    <!-- @hide Allows an application to send SMS messages. -->
+    <permission android:name="android.permission.MULTI_TOUCH_DIS"
+        android:permissionGroup="android.permission-group.MESSAGES"
+        android:protectionLevel="dangerous"
+        android:permissionFlags="costsMoney"
+        android:label="@string/permlab_sendSms"
+        android:description="@string/permdesc_sendSms" />   
 
     <!-- @SystemApi Allows an application (Phone) to send a request to other applications
          to handle the respond-via-message action during incoming calls.
@@ -3287,6 +3297,14 @@
             </intent-filter>
         </receiver>
 
+        <!-- New broadcast receiver added for gestures-->
+        <receiver android:name="android.view.GestureReceiver" >
+            <intent-filter>
+                <action android:name="android.view.GestureReceiver" >
+                </action>
+            </intent-filter>
+        </receiver>
+
         <service android:name="com.android.internal.os.storage.ExternalStorageFormatter"
             android:permission="android.permission.MASTER_CLEAR"
             android:exported="true" />
@@ -3320,5 +3338,6 @@
         </service>
 
     </application>
+
 
 </manifest>

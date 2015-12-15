@@ -88,6 +88,32 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashSet;
 
+import java.util.Arrays;
+import android.view.MatrixUtil;
+import android.content.Intent;
+import android.app.Activity;
+import android.util.SparseArray;
+import android.view.Event;
+import android.view.GestureRecorder;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintWriter;
+import android.bluetooth.BluetoothAdapter;
+import android.net.wifi.WifiManager;
+import android.media.AudioManager;
+import android.net.wifi.IWifiManager;
+import android.os.ServiceManager;
+import android.os.IBinder;
+import android.bluetooth.IBluetoothManager;
+import android.app.ActivityThread;
+import android.content.ActivityNotFoundException;
+import android.view.Util;
+
+
 /**
  * The top of a view hierarchy, implementing the needed protocol between View
  * and the WindowManager.  This is for the most part an internal implementation
@@ -98,6 +124,7 @@ import java.util.HashSet;
 @SuppressWarnings({"EmptyCatchBlock", "PointlessBooleanExpression"})
 public final class ViewRootImpl implements ViewParent,
         View.AttachInfo.Callbacks, HardwareRenderer.HardwareDrawCallbacks {
+
     private static final String TAG = "ViewRootImpl";
     private static final boolean DBG = false;
     private static final boolean LOCAL_LOGV = false;
@@ -336,7 +363,35 @@ public final class ViewRootImpl implements ViewParent,
     private boolean mIsCircularEmulator;
     private final boolean mWindowIsRound;
 
-    /**
+    private ArrayList<Float> initialXCoordinates;
+    private ArrayList<Float> initialYCoordinates;
+    private ArrayList<Float> finalXCoordinates;
+    private ArrayList<Float> finalYCoordinates;
+    int moveCount;
+    long startTime, endTime;
+    private int maxFingers;
+    private boolean pointerUp;
+    private boolean hasFailed;
+
+   
+	private Event retrievedEvent;   
+	private static GestureRecorder gestureRecorder;
+
+    public interface GestureActionConstants {
+        public static final String WIFI_TOGGLE = "WIFI_TOGGLE";
+        public static final String BLUETOOTH_TOGGLE = "BLUETOOTH_TOGGLE";
+        public static final String DATA_TOGGLE = "DATA_TOGGLE";
+        public static final String GPS_TOGGLE = "GPS_TOGGLE";
+        public static final String RINGER_TOGGLE = "RINGER_TOGGLE";
+        public static final String MINIMIZE = "MINIMIZE";
+        public static final String LAUNCH_CONTACTS = "LAUNCH_CONTACTS";
+        public static final String LAUNCH_CAMERA = "LAUNCH_CAMERA";
+        public static final String LAUNCH_BROWSER = "LAUNCH_BROWSER";
+        public static final String LAUNCH_MESSAGES = "LAUNCH_MESSAGES";
+        public static final String LAUNCH_CALCULATOR = "LAUNCH_CALCULATOR";
+    }
+
+ /**
      * Consistency verifier for debugging purposes.
      */
     protected final InputEventConsistencyVerifier mInputEventConsistencyVerifier =
@@ -392,6 +447,14 @@ public final class ViewRootImpl implements ViewParent,
         loadSystemProperties();
         mWindowIsRound = context.getResources().getBoolean(
                 com.android.internal.R.bool.config_windowIsRound);
+        initialXCoordinates = new ArrayList<Float>();
+        initialYCoordinates = new ArrayList<Float>();
+	startTime = 0;
+	endTime = 0;
+	moveCount = 0;
+	maxFingers = 0;
+    pointerUp = false;
+    hasFailed = false;
     }
 
     public static void addFirstDrawHandler(Runnable callback) {
@@ -3918,6 +3981,7 @@ public final class ViewRootImpl implements ViewParent,
         }
 
         private int processPointerEvent(QueuedInputEvent q) {
+
             final MotionEvent event = (MotionEvent)q.mEvent;
 
             // Translate the pointer event for compatibility, if needed.
@@ -4124,6 +4188,176 @@ public final class ViewRootImpl implements ViewParent,
 
         private int processPointerEvent(QueuedInputEvent q) {
             final MotionEvent event = (MotionEvent)q.mEvent;
+            int maskedAction = event.getActionMasked();
+            int pointerIndex = event.getActionIndex();
+            int pointerCount = event.getPointerCount();
+            if(pointerCount > maxFingers){
+                maxFingers = pointerCount;
+            }
+            //Log.d("GestureRecorder","pointerId ::"+pointerId);
+
+            //if (gestureRecorder == null){
+   //             Log.d("ViewRootImpl","inited");
+                gestureRecorder = GestureRecorder.getInstance();
+                gestureRecorder.initGestureRecorder(mContext);
+            //}
+
+            //Log.d("ViewRoot ","pointerCount ::"+maxFingers);
+            //if(maxFingers > 2){
+                /**
+                 * @hide
+                 */
+                String permissionString = "android.permission.MULTI_TOUCH_DIS";
+                int permFlag = mContext.checkPermission(permissionString, Binder.getCallingPid(),Binder.getCallingUid());
+                Log.d(TAG,"Found Permission:" + permFlag);
+                
+                if(permFlag != 0) {
+                    switch (maskedAction) {
+
+                        case MotionEvent.ACTION_DOWN:{
+                            retrievedEvent = null;
+
+                            initialXCoordinates = new ArrayList<Float>();
+                            initialYCoordinates = new ArrayList<Float>();
+                            finalXCoordinates = new ArrayList<Float>();
+                            finalYCoordinates = new ArrayList<Float>();
+                            initialXCoordinates.add(event.getX(pointerIndex));
+                            initialYCoordinates.add(event.getY(pointerIndex));
+                            startTime = System.currentTimeMillis();
+                            Log.d("ViewRootImpl","ACTION_DOWN");
+                            retrievedEvent = gestureRecorder.retrieveEvent(retrievedEvent,MotionEvent.ACTION_DOWN);
+                            if(retrievedEvent != null){
+                                Log.d("ViewRootImpl","MotionEvent ::"+gestureRecorder.getActionDescription(retrievedEvent.getAction()));
+                            }
+                            break;
+                        }
+                        case MotionEvent.ACTION_POINTER_DOWN: {
+                            if(pointerUp){
+                                pointerUp = false;
+                                hasFailed = true;
+                                return FINISH_HANDLED;
+                            }
+                            initialXCoordinates.add(event.getX(pointerIndex));
+                            initialYCoordinates.add(event.getY(pointerIndex));
+
+                            Log.d("ViewRootImpl","ACTION_POINTER_DOWN");
+                            retrievedEvent = gestureRecorder.retrieveEvent(retrievedEvent,MotionEvent.ACTION_POINTER_DOWN);
+                            if(retrievedEvent != null){
+                                Log.d("ViewRootImpl","MotionEvent ::"+gestureRecorder.getActionDescription(retrievedEvent.getAction()));
+                            }
+                            break;
+                        }
+
+                        case MotionEvent.ACTION_UP: {
+                            if(hasFailed){
+                                retrievedEvent = null;
+                                maxFingers = 0;
+                                moveCount = 0;
+                                startTime = endTime = 0;
+                                pointerUp = false;
+                                hasFailed = false;
+                                break;
+                            }
+
+                            endTime = System.currentTimeMillis();
+
+                            finalXCoordinates.add(event.getX(pointerIndex));
+                            finalYCoordinates.add(event.getY(pointerIndex));
+                            Log.d("ViewRootImpl","ACTION_UP");
+                            int motion = 0;
+
+                            Util gestureUtil = new Util(startTime, endTime, moveCount);
+                            motion = gestureUtil.help(initialXCoordinates, initialYCoordinates, finalXCoordinates
+                            , finalYCoordinates);
+                            /*
+                             * Retrieve the motion and peform associated action
+                             */
+     
+                           // Log.d("ViewRootImpl","ACTION_UP");
+                            retrievedEvent = gestureRecorder.retrieveEvent(retrievedEvent,MotionEvent.ACTION_UP);
+                            Log.d(TAG,"motion :"+motion);
+                            Log.d(TAG,"retrieved gesture :"+retrievedEvent);
+                            if(retrievedEvent != null){
+                                Log.d("GestureRecorder","MotionEvent ::"+gestureRecorder.getActionDescription(retrievedEvent.getAction()));
+                                retrievedEvent = gestureRecorder.retrieveEvent(retrievedEvent,-1);  
+                                Log.d("GestureRecorder","Final Event:"+retrievedEvent);
+                                Log.d("GestureRecorder","Final Event Map:"+retrievedEvent.getGestureMap());    
+                                Gesture gest = null;
+                                if(retrievedEvent != null) {
+                                    gest = retrievedEvent.getGesture(motion);
+                                    if(gest != null) {
+                                        Log.d(TAG,"Action to be performed:" + gest.getActionType());
+                                        switch(gest.getActionType()) {
+                                            case "WIFI_TOGGLE":
+                                                toggleWifi();
+                                                break;
+                                            case "BLUETOOTH_TOGGLE":
+                                                toggleBluetooth();
+                                                break;
+                                            case "DATA_TOGGLE":
+                                                toggleData();
+                                                break;
+                                            case "GPS_TOGGLE":
+                                                toggleGPS();
+                                                break;
+                                            case "RINGER_TOGGLE":
+                                                toggleRinger();
+                                                break;
+                                            case "MINIMIZE":
+                                                minimize();
+                                                break;
+                                            case "LAUNCH_CONTACTS":
+                                                launchApp("com.android.contacts");
+                                                break;
+                                            case "LAUNCH_CALCULATOR":
+                                                launchApp("com.android.calculator2");
+                                                break;
+                                            case "LAUNCH_MESSAGES":
+                                                launchApp("");
+                                                break;
+                                            case "LAUNCH_BROWSER":
+                                                launchApp("com.android.browser");
+                                                break;
+                                            case "LAUNCH_CAMERA":
+                                                launchApp("com.android.camera2");
+                                                break;
+                                            case "LAUNCH_DIALLER":
+                                                launchApp("com.android.server.telecom");
+                                                break;
+                                        }    
+                                    }                                    
+                                }
+                                Log.d(TAG,"retrieved gesture description :"+gest);
+                            }
+                            retrievedEvent = null;
+                            maxFingers = 0;
+                            moveCount = 0;
+                            startTime = endTime = 0;
+                            pointerUp = false;
+                            hasFailed = false;
+                            break;
+                        }
+                        case MotionEvent.ACTION_POINTER_UP: {
+                            pointerUp = true;
+                            finalXCoordinates.add(event.getX(pointerIndex));
+                            finalYCoordinates.add(event.getY(pointerIndex));
+                            Log.d("ViewRootImpl","ACTION_POINTER_UP");
+                            retrievedEvent = gestureRecorder.retrieveEvent(retrievedEvent,MotionEvent.ACTION_POINTER_UP);
+                            if(retrievedEvent != null){
+                                Log.d("GestureRecorder","MotionEvent ::"+gestureRecorder.getActionDescription(retrievedEvent.getAction()));
+                            }
+                            break;
+                        }
+                        case MotionEvent.ACTION_MOVE:{
+                            moveCount++;
+                            break;
+                        }
+                        case MotionEvent.ACTION_CANCEL: {
+                            break;
+                        }
+                    }    
+                }                
+            //}        
 
             mAttachInfo.mUnbufferedDispatchRequested = false;
             boolean handled = mView.dispatchPointerEvent(event);
@@ -4154,6 +4388,29 @@ public final class ViewRootImpl implements ViewParent,
             }
             return FORWARD;
         }
+    }
+
+    public float getRadius(PointF one,PointF two,PointF three){
+        float radius = 0.0f;
+        float [][]A = new float[3][3];
+        A[0][0] = one.x; A[0][1] = one.y; A[0][2] = 1;
+        A[1][0] = two.x; A[1][1] = two.y; A[1][2] = 1;
+        A[2][0] = three.x; A[2][1] = three.y; A[2][2] = 1;
+        float []B = new float[3];
+        B[0] = (one.x*one.x + one.y*one.y);
+        B[1] = (two.x*two.x + two.y*two.y);
+        B[2] = (three.x*three.x + three.y*three.y);
+        A = MatrixUtil.invert(A);
+        float []answer = new float[3];
+        for(int i=0;i<A.length;i++){
+            answer[i] = A[i][0]*B[0] + A[i][1]*B[1] + A[i][2]*B[2] ;
+        }
+        System.out.println(Arrays.toString(answer));
+        float temp1 = Math.abs(answer[0])/2;
+        float temp2 = Math.abs(answer[1])/2;
+        float rhs = (answer[2] + temp1*temp1 + temp2*temp2);
+        radius = (float)Math.sqrt(rhs);
+        return radius;
     }
 
     /**
@@ -6968,5 +7225,115 @@ public final class ViewRootImpl implements ViewParent,
                 mSource.postDelayed(this, minEventIntevalMillis - timeSinceLastMillis);
             }
         }
+    }
+
+    private void toggleBluetooth(){
+        Log.d(TAG,"In toggle Bluetooth");
+        Intent mIntent = mContext.getPackageManager().getLaunchIntentForPackage("acs.ub.edu.settingsenabler");
+        if(mIntent != null){
+            try{
+                Bundle b =new Bundle();
+                b.putString("Instruction","Bluetooth On");
+                mIntent.putExtras(b);
+                mContext.startActivity(mIntent);
+            }
+            catch (ActivityNotFoundException err) {
+                Log.d(TAG,"Exception");
+            }
+        }
+        else{
+            Log.d(TAG,"Intent is null");
+
+        }
+        
+        }
+
+    private void toggleWifi(){
+        Log.d(TAG,"In toggleWifi");
+        Intent mIntent = mContext.getPackageManager().getLaunchIntentForPackage("acs.ub.edu.settingsenabler");
+        
+        if(mIntent != null){
+            try{
+                Bundle b =new Bundle();
+                b.putString("Instruction","Wifi On");
+                mIntent.putExtras(b);
+                mContext.startActivity(mIntent);
+            }
+            catch (ActivityNotFoundException err) {
+                Log.d(TAG,"Exception");
+            }
+        }
+        else{
+            Log.d(TAG,"Intent is null");
+
+        }
+        
+    }
+
+    private void toggleRinger(){
+        AudioManager am = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+        if(am == null){
+            Log.d(TAG,"Audio manager is null");
+            return;
+        }
+        Log.d(TAG,"Audio Manager obtained");
+        int normal = 2;
+        int vibrate = 1;
+        int silent = 0;
+        if(am.getRingerMode() == normal){
+            Log.d(TAG,"In normal mode.");
+            am.setRingerMode(AudioManager.RINGER_MODE_SILENT);
+        }
+        else if(am.getRingerMode() == silent){
+            Log.d(TAG,"In silent mode");
+            am.setRingerMode(AudioManager.RINGER_MODE_NORMAL);
+        }
+    }
+
+    private void toggleGPS(){
+        Log.d(TAG,"Toggle GPS");
+        mContext.startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+    }
+
+    private void toggleData(){
+        Log.d(TAG,"Toggle Data");
+        Intent mIntent = mContext.getPackageManager().getLaunchIntentForPackage("acs.ub.edu.settingsenabler");
+        if(mIntent != null){
+            try{
+                Bundle b =new Bundle();
+                b.putString("Instruction","Data On");
+                mIntent.putExtras(b);
+                mContext.startActivity(mIntent);
+            }
+            catch (ActivityNotFoundException err) {
+                Log.d(TAG,"Exception");
+            }
+        }
+        else{
+            Log.d(TAG,"Intent is null");
+
+        }
+    }
+
+    private void launchApp(String packageName){
+    Intent intent = mContext.getPackageManager().getLaunchIntentForPackage(packageName);
+    if(intent != null){
+        try{
+            mContext.startActivity(intent);
+        }   
+        catch(ActivityNotFoundException e){
+            Log.d(TAG,"Exception");
+        }
+    }
+    else
+        Log.d(TAG,"COuld not create intent");
+
+    }
+
+    private void minimize(){
+    Intent intent = new Intent(Intent.ACTION_MAIN);
+    intent.addCategory(Intent.CATEGORY_HOME);
+    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    mContext.startActivity(intent); 
     }
 }
